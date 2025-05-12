@@ -1,5 +1,4 @@
-// backend/server.js
-
+//server.js
 // Загружаем .env СРАЗУ, до любых других импортов
 import 'dotenv/config';
 
@@ -57,8 +56,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
   : ['http://localhost:3000'];
 
-// ✅ Настройка CORS
-const corsOptions = {
+// ✅ Настройка CORS — с явным заголовком
+app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
@@ -70,9 +69,21 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-xsrf-token'],
   credentials: true,
   maxAge: 86400 // 24 hours
-};
+}));
 
-app.use(cors(corsOptions));
+// ✅ Принудительная установка Access-Control-Allow-Origin
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-xsrf-token');
+
+  next();
+});
 
 // Rate limiting — ограничение до 100 запросов за 10 минут с одного IP
 if (process.env.NODE_ENV === 'production') {
