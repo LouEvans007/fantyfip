@@ -4,6 +4,7 @@ import User from "../models/userModel.js";
 import { ChutesClient } from '../utils/chutesClient.js';
 import sanitize from '../utils/sanitizeEntry.js';
 import { llmQueue } from '../utils/llmQueue.js';
+import JSON5 from 'json5';
 
 /* ========================================================================= */
 /*  1. — Journal CRUD                                                        */
@@ -282,44 +283,74 @@ export async function processEntryWithLLM(entryId) {
       ]
     });
 
-    const raw = completion.choices[0].message.content;
-    const analysis = safeParseJSON(raw);
+const raw = completion.choices[0].message.content;
+const analysis = safeParseJSON(raw);
 
-    await JournalEntry.findByIdAndUpdate(entryId, {
-      analysis: { ...analysis, processed: true }
-    });
-  } catch (err) {
-    console.error("LLM processing error:", err);
+await JournalEntry.findByIdAndUpdate(entryId, {
+  analysis: { ...analysis, processed: true }
+});
+} catch (err) {
+console.error("LLM processing error:", err);
 
-    await JournalEntry.findByIdAndUpdate(entryId, {
-      analysis: {
-        supportiveResponse: "Спасибо, что делитесь своими мыслями. Я здесь, чтобы поддержать вас.",
-        identifiedPatterns: ["Не удалось проанализировать запись"],
-        suggestedStrategies: ["Попробуйте вернуться позже и переформулировать мысли."],
-        processed: true
-      }
-    });
+await JournalEntry.findByIdAndUpdate(entryId, {
+  analysis: {
+    supportiveResponse: "Спасибо, что делитесь своими мыслями. Я здесь, чтобы поддержать вас.",
+    identifiedPatterns: ["Не удалось проанализировать запись"],
+    suggestedStrategies: ["Попробуйте вернуться позже и переформулировать мысли."],
+    processed: true
   }
+});
+}
 }
 
 function buildPrompt(content) {
-  return `
+return `
 Ниже приведена запись дневника пользователя.
 ENTRY:
 "${content}"
+
 Пожалуйста, предоставь:
 1. Поддерживающий ответ (max 100 слов, русский)
 2. Выдели до 3 негативных паттернов
 3. Предложи 2‑3 стратегии/перспективы
-Верни ТОЛЬКО валидный JSON: supportiveResponse, identifiedPatterns, suggestedStrategies.
+
+Верни ТОЛЬКО чистый JSON без пояснений:
+{
+  "supportiveResponse": "Поддерживающий текст",
+  "identifiedPatterns": ["паттерн 1", "паттерн 2"],
+  "suggestedStrategies": ["стратегия 1", "стратегия 2"]
+}
 `.trim();
 }
 
+// ✅ Новая безопасная функция парсинга через JSON5
 function safeParseJSON(text) {
-  try {
-    return JSON.parse(text); // теперь приходит строгий JSON
-  } catch (err) {
-    console.error("JSON parse failed, raw response:", text);
-    throw err;
+try {
+  // 🧹 Чистим строку и извлекаем только JSON
+  const cleaned = text
+    .replace(/^.*?(\{(?:.|\n)*?\}).*$/s, '$1') // берём только JSON
+    .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // правильные ключи
+    .replace(/,\s*([\]}])/g, '$1') // убираем последнюю запятую
+    .replace(/'/g, '"') // меняем одинарные кавычки на двойные
+    .trim();
+
+  // 🛠 Проверяем, есть ли хотя бы начало JSON
+  if (!cleaned || !cleaned.startsWith('{')) {
+    throw new Error('Неверный формат JSON');
   }
+
+  // ✅ Парсим через JSON5
+  return JSON5.parse(cleaned);
+} catch (err) {
+  console.error("❌ Не удалось спарсить JSON от ИИ:", err.message);
+  console.log("👉 Сырой ответ:\n", text);
+
+  // 💬 Резервный ответ
+  return {
+    supportiveResponse: "Спасибо, что делитесь своими мыслями. Я здесь, чтобы поддержать вас.",
+    identifiedPatterns: ["Не удалось проанализировать запись"],
+    suggestedStrategies: ["Попробуйте вернуться позже и переформулировать мысли."],
+    processed: true
+  };
+}
 }
