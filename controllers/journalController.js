@@ -4,7 +4,7 @@ import User from "../models/userModel.js";
 import { ChutesClient } from '../utils/chutesClient.js';
 import sanitize from '../utils/sanitizeEntry.js';
 import { llmQueue } from '../utils/llmQueue.js';
-import JSON5 from 'json5';
+import JSON5 from 'json5/lib/index.js';
 
 /* ========================================================================= */
 /*  1. — Journal CRUD                                                        */
